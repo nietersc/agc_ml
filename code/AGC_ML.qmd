@@ -1,0 +1,50 @@
+---
+title: "AGC ML"
+author: "Chris Nieters"
+date: Sys.Date()
+editor_options:
+  chunk_output_type: console
+format:
+  html:
+    code-fold: false
+    embed-resources: true
+    toc: true
+    number-sections: false
+    theme: cerulean
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+#| echo: false
+
+### Load libraries
+library(tidyverse)
+library(googlesheets4)
+library(ggpubr)
+library(ggsci)
+library(car)
+library(broom) # for model residuals extraction
+library(broom.mixed)
+library(emmeans) # for model mean extraction
+library(multcomp)
+library(nlme)
+library(readxl)
+library(lubridate)
+library(hms)
+library(tidymodels)
+
+#import custom functions
+map(list.files("functions",pattern = "(.R)",full.names = TRUE),source)
+
+```
+
+# Data Import
+```{r}
+
+simb_data <- read_xlsx("../data/simb_data.xlsx")
+
+
+```
+
+---
