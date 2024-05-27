@@ -34,17 +34,148 @@ library(lubridate)
 library(hms)
 library(tidymodels)
 
-#import custom functions
-map(list.files("functions",pattern = "(.R)",full.names = TRUE),source)
 
 ```
 
-# Data Import
+# data import
 ```{r}
 
 simb_data <- read_xlsx("../data/simb_data.xlsx")
 
+sima_data <- read_csv("../data/sima_data.csv",
+                      show_col_types = F)
+
 
 ```
 
----
+## wrangle data
+```{r}
+
+simb_dataw <- simb_data |>
+  mutate(
+    excel_time = as.numeric(.data$`DateTime (Excel)`) ,
+    datetime = lubridate::ymd_hms(
+      openxlsx::convertToDateTime(
+        .data$excel_time,
+        origin = "1900-01-01")),
+    date = as_date(datetime),
+    start_date = as_date("2023-01-15"),
+    dat = date - start_date)|>
+  janitor::clean_names()|>
+  rename_with(~str_remove(.x, "comp1."))|>
+  dplyr::select(-date_time_formatted,
+                -date_time_excel,
+                -excel_time,
+                -start_date)|>
+  dplyr::select(date,datetime,dat,everything())
+
+simbw_long <- simb_dataw |>
+  pivot_longer(
+    -c(1:3),
+    names_to = "metric"
+  )|>
+  mutate(Sim = "Sim B")
+    
+
+
+
+sima_dataw <- sima_data |>
+  mutate(
+    excel_time = as.numeric(.data$`Excel DateTime`) ,
+    datetime = lubridate::ymd_hms(
+      openxlsx::convertToDateTime(
+        .data$excel_time,
+        origin = "1900-01-01")),
+    date = as_date(datetime),
+    start_date = as_date("2023-09-05"),
+    dat = date - start_date)|>
+  janitor::clean_names()|>
+  rename_with(~str_remove(.x, "comp1."))|>
+  dplyr::select(-date_time_converted,
+                -excel_date_time,
+                -excel_time,
+                -start_date)|>
+  dplyr::select(date,datetime,dat,everything())
+
+
+simaw_long <- sima_dataw |>
+  pivot_longer(
+    -c(1:3),
+    names_to = "metric"
+  )|>
+  mutate(Sim = "Sim A")
+
+combined_long <- simaw_long |>
+  full_join(simbw_long)
+    
+
+```
+
+
+## crop development
+```{r}
+
+combined_long |>
+  filter(metric %in% c("growth_crop_abs_0_1",
+                       "growth_dv_sfruit_0_1",
+                       #"growth_fruit_freshweight_gram_plant_1",
+                       "growth_dry_matter_fract_0_1"))|>
+                       #"growth_plant_density_plants_m_2"))|>
+  ggplot(aes(x = dat,
+             y = value,
+             color = metric))+
+  geom_point()+
+  geom_smooth()+
+  facet_wrap(~Sim, scales = "free")+
+  theme(legend.position = "top")+
+  geom_vline(aes(xintercept = as_date(25)),
+                 color = "black",
+                 linetype = "dashed")+
+  annotate("text",x = 18, y = 0.9,
+                label = "25 DAT",
+            color = "black")+
+  xlab("Days After Transplant")
+
+ggsave("../output/growth_stages.tiff",
+       dpi = 350,
+       height = 6,
+       width = 10)
+
+
+```
+
+## key dat
+```{r}
+
+combined_long |>
+  filter(metric %in% c("growth_crop_abs_0_1",
+                       "growth_dv_sfruit_0_1",
+                       "growth_fruit_freshweight_gram_plant_1",
+                       "growth_dry_matter_fract_0_1",
+                       "growth_plant_density_plants_m_2"))|>
+  ggplot(aes(x = dat,
+             y = value,
+             color = metric))+
+  geom_point()+
+  geom_smooth()+
+  facet_grid(metric~Sim, scales = "free")+
+  theme(legend.position = "none",
+        panel.spacing = unit(2, "lines"),
+        strip.text.y = element_text(angle = 0))+
+  geom_vline(aes(xintercept = as_date(25)),
+                 color = "black",
+                 linetype = "dashed")+
+  annotate("text",x = 18, y = 0.9,
+                label = "25 DAT",
+            color = "black")+
+  xlab("Days After Transplant")
+
+ggsave("../output/key_dat.tiff",
+       dpi = 350,
+       height = 8,
+       width = 12)
+
+
+  
+
+```
