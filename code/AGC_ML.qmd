@@ -45,12 +45,12 @@ simb_data <- read_xlsx("../data/simb_data.xlsx")
 sima_data <- read_csv("../data/sima_data.csv",
                       show_col_types = F)
 
-
 ```
 
 ## wrangle data
 ```{r}
 
+#convert date objects - issue losing one data point/day at midnight
 simb_dataw <- simb_data |>
   mutate(
     excel_time = as.numeric(.data$`DateTime (Excel)`) ,
@@ -67,18 +67,19 @@ simb_dataw <- simb_data |>
                 -date_time_excel,
                 -excel_time,
                 -start_date)|>
-  dplyr::select(date,datetime,dat,everything())
+  mutate(sim = "Sim B")|>
+  dplyr::select(sim,date,datetime,dat,everything())
 
+
+#format b data long
 simbw_long <- simb_dataw |>
   pivot_longer(
-    -c(1:3),
-    names_to = "metric"
-  )|>
-  mutate(Sim = "Sim B")
+    -c(1:4),
+    names_to = "metric")
     
 
 
-
+#convert date objects - issue losing one data point/day at midnight
 sima_dataw <- sima_data |>
   mutate(
     excel_time = as.numeric(.data$`Excel DateTime`) ,
@@ -95,19 +96,63 @@ sima_dataw <- sima_data |>
                 -excel_date_time,
                 -excel_time,
                 -start_date)|>
-  dplyr::select(date,datetime,dat,everything())
+  mutate(sim = "Sim A")|>
+  dplyr::select(sim,date,datetime,dat,everything())
 
 
+
+#format a data long
 simaw_long <- sima_dataw |>
   pivot_longer(
-    -c(1:3),
-    names_to = "metric"
-  )|>
-  mutate(Sim = "Sim A")
+    -c(1:4),
+    names_to = "metric")
 
+
+
+```
+
+##combine simulator a and b data
+```{r}
+
+#wide format
+combined <- sima_dataw |>
+  full_join(simb_dataw)
+
+
+#long format
 combined_long <- simaw_long |>
   full_join(simbw_long)
-    
+
+
+```
+
+
+##calc variable costs
+```{r}
+
+var_costs <- combined |>
+  mutate(
+    light_cost = case_when(
+      common_elec_price_peak_hour_bool  > 0.5 ~ lmp1_elec_use_w_m2/1000*0.3,
+      common_elec_price_peak_hour_bool <= 0.5 ~ lmp1_elec_use_w_m2/1000*0.2),
+    heat_cost = p_con_pipe1_value_w_m2/1000*0.09,
+    co2_cost = mc_pure_air_value_kg_m2_s*3600) |>
+ dplyr::select(sim,datetime,light_cost,heat_cost,co2_cost)|>
+  pivot_longer(-c(1:2))
+
+
+var_costs |>
+  ggplot(aes(x = datetime, y = value,
+             color = name))+
+  geom_point(alpha = 0.1)+
+  geom_smooth()+
+  facet_grid(name~sim, scales = "free")
+
+
+ggsave("../output/variable_costs.tiff",
+       dpi = 350,
+       height = 8,
+       width = 12)
 
 ```
 
@@ -126,7 +171,7 @@ combined_long |>
              color = metric))+
   geom_point()+
   geom_smooth()+
-  facet_wrap(~Sim, scales = "free")+
+  facet_wrap(~sim, scales = "free")+
   theme(legend.position = "top")+
   geom_vline(aes(xintercept = as_date(25)),
                  color = "black",
@@ -136,6 +181,7 @@ combined_long |>
             color = "black")+
   xlab("Days After Transplant")
 
+#save output to folder
 ggsave("../output/growth_stages.tiff",
        dpi = 350,
        height = 6,
@@ -144,9 +190,11 @@ ggsave("../output/growth_stages.tiff",
 
 ```
 
-## key dat
+## key features x dat
 ```{r}
 
+
+#filter and plot metrics
 combined_long |>
   filter(metric %in% c("growth_crop_abs_0_1",
                        "growth_dv_sfruit_0_1",
@@ -158,7 +206,7 @@ combined_long |>
              color = metric))+
   geom_point()+
   geom_smooth()+
-  facet_grid(metric~Sim, scales = "free")+
+  facet_grid(metric~sim, scales = "free")+
   theme(legend.position = "none",
         panel.spacing = unit(2, "lines"),
         strip.text.y = element_text(angle = 0))+
@@ -170,12 +218,12 @@ combined_long |>
             color = "black")+
   xlab("Days After Transplant")
 
+
+#save output to folder
 ggsave("../output/key_dat.tiff",
        dpi = 350,
        height = 8,
        width = 12)
 
-
-  
 
 ```
