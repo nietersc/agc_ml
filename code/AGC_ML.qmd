@@ -40,88 +40,80 @@ library(tidymodels)
 # data import
 ```{r}
 
-simb_data <- read_xlsx("../data/simb_data.xlsx")
+simb_1 <- read_xlsx("../data/simb_data.xlsx") |>
+  mutate(sim = "B",
+         tag = "simb_1",
+         detail = "baseline" )
 
-sima_data <- read_csv("../data/sima_data.csv",
-                      show_col_types = F)
+
+simb_2 <- read_xlsx("../data/cleaned_output_Simulator_B_20240507_best.xlsx") |>
+  mutate(sim = "B",
+         tag = "simb_2",
+         detail = "cleaned_output_Simulator_B_20240507_best")
+
+
+simb_3 <- read_xlsx("../data/cleaned_output_Simulator_B_20240521_best.xlsx") |>
+  mutate(sim = "B",
+         tag = "simb_3",
+         detail = "cleaned_output_Simulator_B_20240521_best")
+
+
+simb_4 <- read_xlsx("../data/cleaned_output_Simulator_B_20240528_best.xlsx") |>
+  mutate(sim = "B",
+         tag = "simb_4",
+         detail = "cleaned_output_Simulator_B_20240528_best")
+
+
+
+sima_1 <- read_csv("../data/sima_data.csv",
+                      show_col_types = F)|>
+  mutate(sim = "A",
+         tag = "sima_1",
+         detail = "baseline",
+         `DateTime (formatted)` = `DateTime (converted)`,
+         `DateTime (Excel)` = `Excel DateTime`,
+         .keep = "unused")
+
+
+
+sima_2 <- read_xlsx("../data/cleaned_output_simulation_A_enddate_25-11-2023_htemp_12_voffset_6_intensity_150_hlight_16_CO2sp_500_density_20.xlsx")|>
+    mutate(sim = "A",
+           tag = "sima_2",
+           detail = "cleaned_output_simulation_A_enddate_25-11-2023_htemp_12_voffset_6_intensity_150_hlight_16_CO2sp_500_density_20")
+
+
+
+sima_3 <- read_xlsx("../data/cleaned_output_simulatorA_hlight_15_intensity_100_endTime_16_endDate_18-04-2023.xlsx")|>
+    mutate(sim = "A",
+           tag = "sima_3",
+           detail = "cleaned_output_simulatorA_hlight_15_intensity_100_endTime_16_endDate_18-04-2023")
 
 ```
 
-## wrangle data
+##combine and format data
 ```{r}
 
-#convert date objects - issue losing one data point/day at midnight
-simb_dataw <- simb_data |>
+#sim a
+combined_sims <- sima_1 |>
+  full_join(sima_2) |>
+  full_join(sima_3)|>
+  full_join(simb_1) |>
+  full_join(simb_2) |>
+  full_join(simb_3) |>
+  full_join(simb_4) |>
   mutate(
-    excel_time = as.numeric(.data$`DateTime (Excel)`) ,
+    excel_time = as.numeric(`DateTime (Excel)`) ,
     datetime = lubridate::ymd_hms(
       openxlsx::convertToDateTime(
         .data$excel_time,
         origin = "1900-01-01")),
-    date = as_date(datetime),
-    start_date = as_date("2023-01-15"),
-    dat = date - start_date)|>
+    date = as_date(datetime)) |>
   janitor::clean_names()|>
   rename_with(~str_remove(.x, "comp1."))|>
   dplyr::select(-date_time_formatted,
                 -date_time_excel,
-                -excel_time,
-                -start_date)|>
-  mutate(sim = "Sim B")|>
-  dplyr::select(sim,date,datetime,dat,everything())
-
-
-#format b data long
-simbw_long <- simb_dataw |>
-  pivot_longer(
-    -c(1:4),
-    names_to = "metric")
-    
-
-
-#convert date objects - issue losing one data point/day at midnight
-sima_dataw <- sima_data |>
-  mutate(
-    excel_time = as.numeric(.data$`Excel DateTime`) ,
-    datetime = lubridate::ymd_hms(
-      openxlsx::convertToDateTime(
-        .data$excel_time,
-        origin = "1900-01-01")),
-    date = as_date(datetime),
-    start_date = as_date("2023-09-05"),
-    dat = date - start_date)|>
-  janitor::clean_names()|>
-  rename_with(~str_remove(.x, "comp1."))|>
-  dplyr::select(-date_time_converted,
-                -excel_date_time,
-                -excel_time,
-                -start_date)|>
-  mutate(sim = "Sim A")|>
-  dplyr::select(sim,date,datetime,dat,everything())
-
-
-
-#format a data long
-simaw_long <- sima_dataw |>
-  pivot_longer(
-    -c(1:4),
-    names_to = "metric")
-
-
-
-```
-
-##combine simulator a and b data
-```{r}
-
-#wide format
-combined <- sima_dataw |>
-  full_join(simb_dataw)
-
-
-#long format
-combined_long <- simaw_long |>
-  full_join(simbw_long)
+                -excel_time)|>
+  dplyr::select(sim,date,datetime,everything())
 
 
 ```
@@ -130,23 +122,40 @@ combined_long <- simaw_long |>
 ##calc variable costs
 ```{r}
 
-var_costs <- combined |>
+var_costs <- combined_sims |>
   mutate(
+    on_peak = case_when(
+      tag == "simb_2" ~ 0.36,
+      tag %in% c("simb_3","simb_4") ~ 0.1,
+      !tag %in% c('simb_2', "simb_3", "simb_4") ~ 0.3),
+    off_peak = case_when(
+      tag == "simb_2" ~ 0.24,
+      tag %in% c("simb_3","simb_4") ~ 0.05,
+      !tag %in% c('simb_2', "simb_3", "simb_4") ~ 0.2),
     light_cost = case_when(
-      common_elec_price_peak_hour_bool  > 0.5 ~ lmp1_elec_use_w_m2/1000*0.3,
-      common_elec_price_peak_hour_bool <= 0.5 ~ lmp1_elec_use_w_m2/1000*0.2),
+      common_elec_price_peak_hour_bool  > 0.5 ~ lmp1_elec_use_w_m2/1000*on_peak,
+      common_elec_price_peak_hour_bool <= 0.5 ~ lmp1_elec_use_w_m2/1000*off_peak),
     heat_cost = p_con_pipe1_value_w_m2/1000*0.09,
-    co2_cost = mc_pure_air_value_kg_m2_s*3600) |>
- dplyr::select(sim,datetime,light_cost,heat_cost,co2_cost)|>
-  pivot_longer(-c(1:2))
+    co2_cost = mc_pure_air_value_kg_m2_s*3600*0.3)
+
+
+
+
+```
+
+
+##plot var costs
+```{r}
 
 
 var_costs |>
+  dplyr::select(sim,tag,detail,datetime,light_cost,heat_cost,co2_cost)|>
+  pivot_longer(-c(1:4))
   ggplot(aes(x = datetime, y = value,
              color = name))+
   geom_point(alpha = 0.1)+
   geom_smooth()+
-  facet_grid(name~sim, scales = "free")
+  facet_grid(name~tag, scales = "free")
 
 
 ggsave("../output/variable_costs.tiff",
@@ -154,7 +163,36 @@ ggsave("../output/variable_costs.tiff",
        height = 8,
        width = 12)
 
+
 ```
+
+##plot vents
+```{r}
+
+
+combined_sims |>
+  dplyr::select(sim,tag,detail,datetime,
+                con_win_win_wnd_percent,
+                con_win_win_lee_percent,
+                air_t_o_c,
+                air_rh_percent,
+                air_ppm_ppm)|>
+  pivot_longer(-c(1:4))|>
+  ggplot(aes(x = datetime, y = value,
+             color = name))+
+  geom_point(alpha = 0.1)+
+  geom_smooth()+
+  facet_grid(name~tag, scales = "free")
+
+
+ggsave("../output/venting.tiff",
+       dpi = 350,
+       height = 8,
+       width = 12)
+
+
+```
+
 
 
 ## crop development
